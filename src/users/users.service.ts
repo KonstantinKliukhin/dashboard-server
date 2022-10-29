@@ -5,29 +5,48 @@ import { User } from './user.entity';
 import { IUserService } from './user.service.interface';
 import { TYPES } from '../types';
 import { IConfigService } from '../config/config.service.interface';
+import { IUsersRepository } from './users.repository.interface';
+import { UserModel } from '@prisma/client';
 
 @injectable()
 export class UserService implements IUserService {
 	constructor(
 		@inject(TYPES.ConfigService) private configService: IConfigService,
+		@inject(TYPES.UsersRepository) private usersRepository: IUsersRepository,
 	) {}
 
 	async createUser({
 		email,
 		name,
 		password,
-	}: UserRegisterDto): Promise<User | null> {
+	}: UserRegisterDto): Promise<UserModel | null> {
 		const newUser = new User(email, name);
 		const salt = Number(this.configService.get('SALT'));
 		await newUser.setPassword(password, salt);
-		console.log(salt);
-		//  проверка что он есть
-		//  если есть, возращаем null
-		//  если нет - создаём
-		return null;
+
+		const existedUser = await this.usersRepository.find(email);
+
+		if (existedUser) {
+			return null;
+		}
+
+		return this.usersRepository.create(newUser);
 	}
 
-	async validateUser(_dto: UserLoginDto): Promise<boolean> {
-		return true;
+	async validateUser({ email, password }: UserLoginDto): Promise<boolean> {
+		const existedUser = await this.usersRepository.find(email);
+		if (!existedUser) return false;
+
+		const newUser = new User(
+			existedUser.email,
+			existedUser.name,
+			existedUser.password,
+		);
+
+		return newUser.comparePassword(password);
+	}
+
+	async getUserInfo(email: string): Promise<UserModel | null> {
+		return this.usersRepository.find(email);
 	}
 }
